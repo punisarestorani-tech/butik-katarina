@@ -55,7 +55,6 @@ STROGA PRAVILA:
       },
       config: {
         responseModalities: ['image', 'text'],
-        imageSafety: 'block_low_and_above',
       },
     })
 

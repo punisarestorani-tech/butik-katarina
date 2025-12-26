@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase, CatalogItem } from '@/lib/supabase'
 import { generateTryOn, fileToBase64 } from '@/lib/gemini'
@@ -8,7 +8,7 @@ import Header from '@/components/Header'
 import toast from 'react-hot-toast'
 import { Upload, Camera, Sparkles, X, ChevronLeft, ChevronRight } from 'lucide-react'
 
-export default function TryOnPage() {
+function TryOnContent() {
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([])
@@ -26,7 +26,6 @@ export default function TryOnPage() {
   }, [])
 
   useEffect(() => {
-    // Pre-select item if passed in URL
     const itemId = searchParams.get('item')
     if (itemId && catalogItems.length > 0) {
       const item = catalogItems.find(i => i.id === itemId)
@@ -43,7 +42,6 @@ export default function TryOnPage() {
       return
     }
 
-    // Get user profile
     const { data: profile } = await supabase
       .from('users')
       .select('*')
@@ -91,7 +89,6 @@ export default function TryOnPage() {
     setResult(null)
 
     try {
-      // Get clothing image as base64
       const clothingResponse = await fetch(selectedItem.image_url)
       const clothingBlob = await clothingResponse.blob()
       const clothingBase64 = await new Promise<string>((resolve) => {
@@ -104,7 +101,6 @@ export default function TryOnPage() {
       setResult(generatedResult)
       toast.success('Slika generisana!')
 
-      // Save to history
       if (user) {
         await supabase.from('try_on_results').insert({
           user_id: user.id,
@@ -145,7 +141,6 @@ export default function TryOnPage() {
 
       <div className="pt-24 px-4 pb-16">
         <div className="max-w-6xl mx-auto">
-          {/* Header */}
           <div className="text-center mb-8">
             <p className="text-gold tracking-[0.2em] text-sm mb-4 uppercase">AI Tehnologija</p>
             <h1 className="font-serif text-4xl md:text-5xl text-white mb-4">Virtuelno Probavanje</h1>
@@ -154,9 +149,7 @@ export default function TryOnPage() {
             </p>
           </div>
 
-          {/* Main Content */}
           <div className="grid lg:grid-cols-2 gap-8 mb-12">
-            {/* User Photo Section */}
             <div className="card-luxury p-6">
               <h2 className="font-serif text-xl text-white mb-4 flex items-center gap-2">
                 <Camera className="text-gold" size={20} />
@@ -204,7 +197,6 @@ export default function TryOnPage() {
               />
             </div>
 
-            {/* Result Section */}
             <div className="card-luxury p-6">
               <h2 className="font-serif text-xl text-white mb-4 flex items-center gap-2">
                 <Sparkles className="text-gold" size={20} />
@@ -237,7 +229,6 @@ export default function TryOnPage() {
             </div>
           </div>
 
-          {/* Catalog Selection */}
           <div className="card-luxury p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-serif text-xl text-white">Izaberite Artikal</h2>
@@ -291,7 +282,6 @@ export default function TryOnPage() {
             )}
           </div>
 
-          {/* Generate Button */}
           <div className="text-center mt-8">
             <button
               onClick={handleTryOn}
@@ -314,5 +304,17 @@ export default function TryOnPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function TryOnPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="w-12 h-12 border-2 border-gold border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
+      <TryOnContent />
+    </Suspense>
   )
 }

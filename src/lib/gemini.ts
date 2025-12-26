@@ -1,61 +1,79 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { GoogleGenAI } from '@google/genai'
 
-const genAI = new GoogleGenerativeAI(process.env.NEXT_PUBLIC_GEMINI_API_KEY || '')
+const getMimeType = (base64: string): string => {
+  const match = base64.match(/^data:([^;]+);base64,/)
+  return match ? match[1] : 'image/jpeg'
+}
 
 export async function generateTryOn(
   userImageBase64: string,
   clothingImageBase64: string
 ): Promise<string> {
+  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY
+  if (!apiKey) {
+    throw new Error('Gemini API ključ nije konfigurisan.')
+  }
+
+  const ai = new GoogleGenAI({ apiKey })
+
+  const userMime = getMimeType(userImageBase64)
+  const clothingMime = getMimeType(clothingImageBase64)
+
+  const cleanUserBase64 = userImageBase64.split(',')[1] || userImageBase64
+  const cleanClothingBase64 = clothingImageBase64.split(',')[1] || clothingImageBase64
+
   try {
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash-exp',
-      generationConfig: {
-        temperature: 0.4,
-        topK: 32,
-        topP: 1,
-        maxOutputTokens: 4096,
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.0-flash-exp-image-generation',
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              data: cleanUserBase64,
+              mimeType: userMime,
+            },
+          },
+          {
+            inlineData: {
+              data: cleanClothingBase64,
+              mimeType: clothingMime,
+            },
+          },
+          {
+            text: `VIRTUAL TRY-ON INSTRUKCIJE ZA BUTIK KATARINA:
+
+1. IDENTITET KORISNIKA (SLIKA 1): Sačuvaj LICE, KOSU i OBLIK TELA osobe sa prve slike. Ona je model koji "isprobava" odjeću.
+2. IZVOR ODJEĆE (SLIKA 2): Uzmi isključivo ODJEĆU sa druge slike. Potpuno zanemari lice i identitet osobe sa ove slike.
+3. REZULTAT: Pokaži osobu sa slike 1 kako nosi odjeću sa slike 2. Odjeća treba da bude savršeno prilagođena njenoj pozi i građi.
+
+STROGA PRAVILA:
+- Generiši JEDNU koherentnu sliku visokog kvaliteta.
+- Bez kolaža, bez duplih lica.
+- Pozadina treba da ostane neutralna ili slična slici 1.`,
+          },
+        ],
+      },
+      config: {
+        responseModalities: ['image', 'text'],
+        imageSafety: 'block_low_and_above',
       },
     })
 
-    const prompt = `Ti si AI asistent za virtuelno probanje odjeće u ekskluzivnom butiku.
-
-ZADATAK: Kreiraj realističnu sliku osobe sa PRVE slike koja nosi odjeću sa DRUGE slike.
-
-PRAVILA:
-1. SAČUVAJ IDENTITET: Lice, kosa, ten i građa osobe sa prve slike moraju ostati IDENTIČNI
-2. PRENESI ODJEĆU: Uzmi odjeću (haljinu, majicu, pantalone, itd.) sa druge slike
-3. PRILAGODI: Odjeća mora izgledati prirodno na osobi - ispravne sjene, nabori, proporcije
-4. KVALITET: Rezultat mora izgledati kao profesionalna modna fotografija
-5. POZADINA: Zadrži neutralnu pozadinu
-
-VAŽNO: Osoba na rezultatu mora biti ISTA osoba kao na prvoj slici, samo sa drugom odjećom!`
-
-    const result = await model.generateContent([
-      prompt,
-      {
-        inlineData: {
-          mimeType: 'image/jpeg',
-          data: userImageBase64.replace(/^data:image\/\w+;base64,/, '')
-        }
-      },
-      {
-        inlineData: {
-          mimeType: 'image/jpeg',
-          data: clothingImageBase64.replace(/^data:image\/\w+;base64,/, '')
+    // Extract the generated image from the response
+    const parts = response.candidates?.[0]?.content?.parts
+    if (parts) {
+      for (const part of parts) {
+        if (part.inlineData?.data) {
+          const mimeType = part.inlineData.mimeType || 'image/png'
+          return `data:${mimeType};base64,${part.inlineData.data}`
         }
       }
-    ])
+    }
 
-    const response = await result.response
-    const text = response.text()
-
-    // If the model returns an image, extract it
-    // For now, return a placeholder - actual implementation depends on Gemini's image generation capability
-    return text
-
-  } catch (error) {
+    throw new Error('Nije generisana slika. Pokušajte ponovo.')
+  } catch (error: any) {
     console.error('Gemini API error:', error)
-    throw new Error('Greška pri generisanju slike. Pokušajte ponovo.')
+    throw new Error(error.message || 'Greška pri generisanju slike. Pokušajte ponovo.')
   }
 }
 

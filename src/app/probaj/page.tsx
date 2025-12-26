@@ -212,12 +212,26 @@ function TryOnContent() {
                   </div>
                 ) : result ? (
                   <div className="p-4 w-full">
-                    <div className="bg-white/5 rounded p-4 whitespace-pre-wrap text-white/80 text-sm max-h-[400px] overflow-y-auto">
-                      {result}
+                    <img
+                      src={result}
+                      alt="Virtuelno probavanje"
+                      className="w-full h-auto max-h-[500px] object-contain rounded-lg"
+                    />
+                    <div className="flex gap-2 mt-4">
+                      <a
+                        href={result}
+                        download="butik-katarina-tryon.png"
+                        className="flex-1 btn-gold text-center text-sm py-3"
+                      >
+                        Sačuvaj sliku
+                      </a>
+                      <button
+                        onClick={() => setResult(null)}
+                        className="flex-1 btn-outline text-sm py-3"
+                      >
+                        Nova slika
+                      </button>
                     </div>
-                    <p className="text-white/40 text-xs mt-4 text-center">
-                      Napomena: Za generisanje slika potreban je Gemini model sa podrškom za generisanje slika.
-                    </p>
                   </div>
                 ) : (
                   <div className="text-center text-white/40">

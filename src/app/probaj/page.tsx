@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase, CatalogItem } from '@/lib/supabase'
-import { generateTryOn, fileToBase64 } from '@/lib/gemini'
+import { generateTryOn, fileToBase64, uploadImageToStorage } from '@/lib/gemini'
 import Header from '@/components/Header'
 import toast from 'react-hot-toast'
 import { Upload, Camera, Sparkles, X, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -89,15 +89,15 @@ function TryOnContent() {
     setResult(null)
 
     try {
-      const clothingResponse = await fetch(selectedItem.image_url)
-      const clothingBlob = await clothingResponse.blob()
-      const clothingBase64 = await new Promise<string>((resolve) => {
-        const reader = new FileReader()
-        reader.onloadend = () => resolve(reader.result as string)
-        reader.readAsDataURL(clothingBlob)
-      })
+      // Upload user photo to get URL (Kie.ai requires URLs)
+      toast.loading('Pripremam slike...', { id: 'upload' })
+      const userPhotoUrl = await uploadImageToStorage(userPhoto, 'user-photo.jpg', supabase)
+      toast.dismiss('upload')
 
-      const generatedResult = await generateTryOn(userPhoto, clothingBase64)
+      // Use the clothing item URL directly from catalog
+      const clothingUrl = selectedItem.image_url
+
+      const generatedResult = await generateTryOn(userPhotoUrl, clothingUrl)
       setResult(generatedResult)
       toast.success('Slika generisana!')
 

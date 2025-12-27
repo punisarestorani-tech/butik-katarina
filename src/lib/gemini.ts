@@ -1,105 +1,78 @@
-// Kie.ai Virtual Try-On Integration
+import { GoogleGenAI } from '@google/genai'
 
-const KIE_API_BASE = 'https://api.kie.ai'
-
-interface KieGenerateResponse {
-  code: number
-  msg: string
-  data: {
-    taskId: string
-  }
-}
-
-interface KieRecordResponse {
-  code: number
-  msg: string
-  data: {
-    successFlag: number // 0=processing, 1=success, 2-3=failed
-    resultImageUrl?: string
-    originImageUrl?: string
-    completeTime?: string
-  }
+const getMimeType = (base64: string): string => {
+  const match = base64.match(/^data:([^;]+);base64,/)
+  return match ? match[1] : 'image/jpeg'
 }
 
 export async function generateTryOn(
-  userImageUrl: string,
-  clothingImageUrl: string
+  userImageBase64: string,
+  clothingImageBase64: string
 ): Promise<string> {
-  const apiKey = process.env.NEXT_PUBLIC_KIE_API_KEY
+  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY
   if (!apiKey) {
-    throw new Error('Kie.ai API ključ nije konfigurisan.')
+    throw new Error('Gemini API ključ nije konfigurisan.')
   }
 
+  const ai = new GoogleGenAI({ apiKey })
+
+  const userMime = getMimeType(userImageBase64)
+  const clothingMime = getMimeType(clothingImageBase64)
+
+  const cleanUserBase64 = userImageBase64.split(',')[1] || userImageBase64
+  const cleanClothingBase64 = clothingImageBase64.split(',')[1] || clothingImageBase64
+
   try {
-    // Step 1: Generate the try-on image
-    const generateResponse = await fetch(`${KIE_API_BASE}/api/v1/flux/kontext/generate`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-preview-05-20',
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              data: cleanUserBase64,
+              mimeType: userMime,
+            },
+          },
+          {
+            inlineData: {
+              data: cleanClothingBase64,
+              mimeType: clothingMime,
+            },
+          },
+          {
+            text: `VIRTUAL TRY-ON INSTRUKCIJE ZA BUTIK KATARINA:
+
+1. IDENTITET KORISNIKA (SLIKA 1): Sačuvaj LICE, KOSU i OBLIK TELA osobe sa prve slike. Ona je model koji "isprobava" odjeću.
+2. IZVOR ODJEĆE (SLIKA 2): Uzmi isključivo ODJEĆU sa druge slike. Potpuno zanemari lice i identitet osobe sa ove slike.
+3. REZULTAT: Pokaži osobu sa slike 1 kako nosi odjeću sa slike 2. Odjeća treba da bude savršeno prilagođena njenoj pozi i građi.
+
+STROGA PRAVILA:
+- Generiši JEDNU koherentnu sliku visokog kvaliteta.
+- Bez kolaža, bez duplih lica.
+- Pozadina treba da ostane neutralna ili slična slici 1.`,
+          },
+        ],
       },
-      body: JSON.stringify({
-        prompt: `Virtual try-on: Take the person from the first image and dress them in the clothing/outfit shown in the second image.
-        Keep the person's face, hair, and body exactly the same.
-        Only change their clothes to match the outfit from the second image.
-        The result should look like a natural fashion photo.
-        First image (person): ${userImageUrl}
-        Second image (clothing): ${clothingImageUrl}`,
-        inputImage: userImageUrl,
-        model: 'flux-kontext-pro',
-        aspectRatio: '3:4',
-        outputFormat: 'png',
-      }),
+      config: {
+        responseModalities: ['image', 'text'],
+      },
     })
 
-    if (!generateResponse.ok) {
-      const errorText = await generateResponse.text()
-      throw new Error(`Kie.ai greška: ${errorText}`)
-    }
-
-    const generateResult: KieGenerateResponse = await generateResponse.json()
-
-    if (generateResult.code !== 200) {
-      throw new Error(generateResult.msg || 'Greška pri pokretanju generisanja')
-    }
-
-    const taskId = generateResult.data.taskId
-
-    // Step 2: Poll for the result
-    let attempts = 0
-    const maxAttempts = 60 // Max 2 minutes (2s intervals)
-
-    while (attempts < maxAttempts) {
-      await new Promise(resolve => setTimeout(resolve, 2000)) // Wait 2 seconds
-
-      const statusResponse = await fetch(
-        `${KIE_API_BASE}/api/v1/flux/kontext/record-info?taskId=${taskId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-          },
+    // Extract the generated image from the response
+    const parts = response.candidates?.[0]?.content?.parts
+    if (parts) {
+      for (const part of parts) {
+        if (part.inlineData?.data) {
+          const mimeType = part.inlineData.mimeType || 'image/png'
+          return `data:${mimeType};base64,${part.inlineData.data}`
         }
-      )
-
-      if (!statusResponse.ok) {
-        throw new Error('Greška pri provjeri statusa')
       }
-
-      const statusResult: KieRecordResponse = await statusResponse.json()
-
-      if (statusResult.data.successFlag === 1 && statusResult.data.resultImageUrl) {
-        return statusResult.data.resultImageUrl
-      } else if (statusResult.data.successFlag >= 2) {
-        throw new Error('Generisanje nije uspjelo. Pokušajte ponovo.')
-      }
-
-      attempts++
     }
 
-    throw new Error('Generisanje je isteklo. Pokušajte ponovo.')
+    throw new Error('Nije generisana slika. Pokušajte ponovo.')
   } catch (error: any) {
-    console.error('Kie.ai API error:', error)
-    throw new Error(error.message || 'Greška pri generisanju slike.')
+    console.error('Gemini API error:', error)
+    throw new Error(error.message || 'Greška pri generisanju slike. Pokušajte ponovo.')
   }
 }
 
@@ -113,13 +86,12 @@ export function fileToBase64(file: File): Promise<string> {
   })
 }
 
-// Upload image to get URL (for Kie.ai which requires URLs)
+// Upload image to get URL (kept for compatibility)
 export async function uploadImageToStorage(
   base64Data: string,
   fileName: string,
   supabaseClient: any
 ): Promise<string> {
-  // Convert base64 to blob
   const base64Response = await fetch(base64Data)
   const blob = await base64Response.blob()
 

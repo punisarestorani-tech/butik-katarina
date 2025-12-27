@@ -89,15 +89,16 @@ function TryOnContent() {
     setResult(null)
 
     try {
-      // Upload user photo to get URL (Kie.ai requires URLs)
-      toast.loading('Pripremam slike...', { id: 'upload' })
-      const userPhotoUrl = await uploadImageToStorage(userPhoto, 'user-photo.jpg', supabase)
-      toast.dismiss('upload')
+      // Get clothing image as base64
+      const clothingResponse = await fetch(selectedItem.image_url)
+      const clothingBlob = await clothingResponse.blob()
+      const clothingBase64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader()
+        reader.onloadend = () => resolve(reader.result as string)
+        reader.readAsDataURL(clothingBlob)
+      })
 
-      // Use the clothing item URL directly from catalog
-      const clothingUrl = selectedItem.image_url
-
-      const generatedResult = await generateTryOn(userPhotoUrl, clothingUrl)
+      const generatedResult = await generateTryOn(userPhoto, clothingBase64)
       setResult(generatedResult)
       toast.success('Slika generisana!')
 
